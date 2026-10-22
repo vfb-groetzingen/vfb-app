@@ -3,11 +3,11 @@
 window.APP_CONFIG = {
   
     // SUPABASE_URL: "https://DEIN-PROJEKT.supabase.co",
-  SUPABASE_URL: "https://nxjlzefzglieyhjxnjym.supabase.co",
+  SUPABASE_URL: "https://ltqcowdcadvahrdjrldm.supabase.co",
   
 
   // SUPABASE_ANON_KEY: "DEIN-ANON-KEY",
-  SUPABASE_ANON_KEY: "sb_publishable_HelmUDqFxOxc5Dx9D2_BKw_mKuetVsB",
+  SUPABASE_ANON_KEY: "sb_publishable_CQdYDR5HA-vi0WNJjvwoGg_Sz0uKZm5",
   
   
   // SITE_URL: "https://DEIN-GITHUB-NAME.github.io/REPO-NAME"
