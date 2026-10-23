@@ -8,10 +8,11 @@
 :root{--ink:#1d2630;--muted:#5b6876;--line:#dfe5ea;--bg:#f5f7f9;--head:#1f2a33;--accent:#2f6b4f;--accent-d:#24543e;--warn:#9a3412;--warn-bg:#fef3c7;--err:#b3261e;--ok-bg:#e6f4ea}
 *{box-sizing:border-box}
 body{margin:0;font-family:Inter,"Segoe UI",Arial,sans-serif;background:var(--bg);color:var(--ink);line-height:1.45;min-height:100vh;display:flex;flex-direction:column}
-header{background:var(--head);color:#fff;padding:14px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
-header strong{font-size:18px}
-.slogan{font-size:14px;opacity:.9;margin-top:2px}
-#who{font-size:14px;opacity:.85}
+header{background:#fff;color:var(--head);padding:18px 20px 12px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;border-bottom:1px solid var(--line)}
+.logo{display:block;max-height:110px;max-width:260px;width:auto;height:auto}
+header strong{font-size:20px;color:var(--head)}
+.slogan{font-size:14px;color:var(--muted);margin-top:2px}
+#who{font-size:13px;color:var(--muted);min-height:1em}
 nav{display:flex;gap:4px;background:#fff;border-bottom:1px solid var(--line);overflow-x:auto;padding:0 8px}
 nav button{background:none;border:0;padding:12px 14px;cursor:pointer;color:var(--muted);font:inherit;font-size:15px;border-bottom:3px solid transparent;white-space:nowrap}
 nav button[aria-selected="true"]{color:var(--accent-d);border-bottom-color:var(--accent);font-weight:600}
@@ -63,12 +64,13 @@ footer a{color:var(--accent-d)}
 </head>
 <body>
 <header>
+  <img class="logo" src="logo.png" alt="Logo VfB Grötzingen" onerror="this.remove()">
   <div><strong>VfB Grötzingen</strong><div class="slogan">Hier ist Sport daheim.</div></div>
   <div id="who"></div>
 </header>
 <nav role="tablist" id="tabs"></nav>
 <main id="main"><p class="muted">Lade …</p></main>
-<footer>VfB Grötzingen · <a href="https://www.vfb-groetzingen.de">www.vfb-groetzingen.de</a> · <a href="#" onclick="return false">Impressum und Datenschutz bitte ergänzen</a></footer>
+<footer>VfB 04 Grötzingen e.V. · <a href="https://www.vfb-groetzingen.de">www.vfb-groetzingen.de</a> · <a href="#" onclick="go('impressum');return false">Impressum</a> · <a href="#" onclick="go('datenschutz');return false">Datenschutz</a></footer>
 <script src="app.js"></script>
 </body>
 </html>
