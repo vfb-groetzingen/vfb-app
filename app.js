@@ -234,10 +234,13 @@ async function saveItem(e) {
     }
     if (editing) {
       if (newPath) fields.image_path = newPath;
-      const { data, error } = await sb.from('items').update(fields).eq('id', editing.id).select('status').single();
+      const { data, error } = await sb.from('items').update(fields).eq('id', editing.id).select('status');
       if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error('Keine Berechtigung zum Ändern. Bitte prüfe, ob die SQL-Datei update-artikel-bearbeiten.sql in Supabase ausgeführt wurde.');
+      }
       if (newPath && editing.image_path) await sb.storage.from('flea-images').remove([editing.image_path]);
-      state.msg = data.status === 'freigegeben'
+      state.msg = data[0].status === 'freigegeben'
         ? 'Änderungen gespeichert.'
         : 'Änderungen gespeichert. Der Artikel wird erneut vom Vorstand geprüft.';
       state.editItem = null;
