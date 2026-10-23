@@ -7,7 +7,7 @@ const params = new URLSearchParams(location.search);
 const state = {
   booted: false, tab: 'markt', user: null, isAdmin: false, displayName: '',
   messages: [], items: [],
-  chatReady: false, msg: '', err: ''
+  chatReady: false, msg: '', err: '', editItem: null
 };
 
 function esc(s) {
@@ -137,18 +137,25 @@ async function delMsg(id) {
   render();
 }
 
+function itemForm() {
+  const e = state.editItem;
+  const v = k => esc(e ? (e[k] ?? '') : '');
+  return `<div class="card"><h3>${e ? 'Artikel bearbeiten' : 'Artikel einstellen'}</h3>
+       <p class="muted">Artikel werden automatisch geprüft. Auffällige Angebote gehen zur Prüfung an den Vorstand. Nach einem Monat erhältst du eine E-Mail, ob der Artikel verlängert werden soll. Ohne Antwort wird er nach einer weiteren Woche entfernt.${e ? ' Bei Änderungen an Titel, Preis, Kategorie oder Beschreibung wird der Artikel erneut geprüft.' : ''}</p>
+       <form class="row" onsubmit="saveItem(event)">
+         <div class="field"><label for="it">Titel</label><input id="it" required minlength="3" maxlength="80" value="${v('title')}"></div>
+         <div class="field"><label for="ip">Preis in €</label><input id="ip" type="number" required min="0" max="100000" step="0.5" value="${e ? Number(e.price_eur) : ''}"></div>
+         <div class="field"><label for="ic">Kategorie</label><select id="ic">${CATS.map(c => `<option ${e && e.category === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
+         <div class="field full"><label for="idesc">Beschreibung</label><textarea id="idesc" rows="2" maxlength="500">${v('description')}</textarea></div>
+         <div class="field full"><label for="iimg">${e ? 'Neues Foto (optional, ersetzt das bisherige)' : 'Foto (optional)'}</label><input id="iimg" type="file" accept="image/*"></div>
+         <button class="primary" type="submit">${e ? 'Speichern' : 'Einstellen'}</button>
+         ${e ? '<button class="secondary" type="button" onclick="cancelEdit()">Abbrechen</button>' : ''}
+       </form></div>`;
+}
+
 function viewMarkt() {
   const form = state.user
-    ? `<div class="card"><h3>Artikel einstellen</h3>
-       <p class="muted">Artikel werden automatisch geprüft. Auffällige Angebote gehen zur Prüfung an den Vorstand. Nach einem Monat erhältst du eine E-Mail, ob der Artikel verlängert werden soll. Ohne Antwort wird er nach einer weiteren Woche entfernt.</p>
-       <form class="row" onsubmit="addItem(event)">
-         <div class="field"><label for="it">Titel</label><input id="it" required minlength="3" maxlength="80"></div>
-         <div class="field"><label for="ip">Preis in €</label><input id="ip" type="number" required min="0" max="100000" step="0.5"></div>
-         <div class="field"><label for="ic">Kategorie</label><select id="ic">${CATS.map(c => `<option>${c}</option>`).join('')}</select></div>
-         <div class="field full"><label for="idesc">Beschreibung</label><textarea id="idesc" rows="2" maxlength="500"></textarea></div>
-         <div class="field full"><label for="iimg">Foto (optional)</label><input id="iimg" type="file" accept="image/*"></div>
-         <button class="primary" type="submit">Einstellen</button>
-       </form></div>`
+    ? itemForm()
     : `<div class="notice">Zum Einstellen von Artikeln bitte anmelden.</div>`;
   const list = state.items.map(it => {
     const mine = state.user && it.seller_id === state.user.id;
@@ -158,7 +165,11 @@ function viewMarkt() {
         <h3>${esc(it.title)}<span class="price">${price(it.price_eur)}</span></h3>
         <span class="tag">${esc(it.category)}</span>${it.status !== 'freigegeben' ? '<span class="tag warn-tag">In Prüfung</span>' : ''}
         <p>${esc(it.description || '')}</p>
-        ${mine ? `<span class="muted">Dein Artikel</span> <button class="link" onclick="delItem('${it.id}')">Entfernen</button>` : ''}
+        ${mine ? `<span class="muted">Dein Artikel</span> <button class="link" onclick="editItem('${it.id}')">Bearbeiten</button> <button class="link" onclick="delItem('${it.id}')">Entfernen</button>` : ''}
+        ${!mine && state.user ? (state.inquiryId === it.id
+          ? `<form class="row" onsubmit="sendInquiry(event,'${it.id}')"><div class="field full"><label for="iq-${it.id}">Deine Nachricht an den Verkäufer</label><textarea id="iq-${it.id}" rows="2" required minlength="5" maxlength="500"></textarea></div><button class="primary" type="submit">Senden</button> <button class="secondary" type="button" onclick="closeInquiry()">Abbrechen</button></form>`
+          : `<button class="secondary" onclick="openInquiry('${it.id}')">Anfrage senden</button>`) : ''}
+        ${!state.user ? '<p class="muted">Zum Anfragen bitte anmelden.</p>' : ''}
       </div></div>`;
   }).join('');
   return `<h2>Flohmarkt für Sportartikel</h2>${form}<div class="card">${list || '<p class="muted">Noch keine Artikel.</p>'}</div>`;
@@ -180,34 +191,70 @@ function shrinkImage(file) {
   });
 }
 
-async function addItem(e) {
+function editItem(id) {
+  const it = state.items.find(x => x.id === id);
+  if (!it) return;
+  state.editItem = it; state.msg = ''; state.err = '';
+  render();
+  window.scrollTo(0, 0);
+}
+
+function openInquiry(id) { state.inquiryId = id; state.msg = ''; state.err = ''; render(); }
+function closeInquiry() { state.inquiryId = null; render(); }
+
+async function sendInquiry(e, id) {
+  e.preventDefault();
+  const message = document.getElementById('iq-' + id).value.trim();
+  const { data, error } = await sb.functions.invoke('flea-anfrage', { body: { item_id: id, message } });
+  if (error || data?.error) {
+    let reason = data?.error || error?.message || 'unbekannter Fehler';
+    if (error?.context?.json) { try { reason = (await error.context.json()).error || reason; } catch (_) {} }
+    state.err = 'Anfrage fehlgeschlagen: ' + reason;
+  } else {
+    state.msg = 'Deine Anfrage wurde an den Verkäufer gesendet.';
+    state.inquiryId = null;
+  }
+  render();
+}
+
+function cancelEdit() { state.editItem = null; state.err = ''; render(); }
+
+async function saveItem(e) {
   e.preventDefault();
   const file = document.getElementById('iimg').files[0];
-  let path = null;
+  const editing = state.editItem;
+  let newPath = null;
   try {
+    const fields = { title: val('it'), price_eur: Number(val('ip')), category: val('ic'), description: val('idesc') || null };
     if (file) {
       const blob = await shrinkImage(file);
-      path = `${state.user.id}/${crypto.randomUUID()}.jpg`;
-      const { error: upErr } = await sb.storage.from('flea-images').upload(path, blob, { contentType: 'image/jpeg' });
+      newPath = `${state.user.id}/${crypto.randomUUID()}.jpg`;
+      const { error: upErr } = await sb.storage.from('flea-images').upload(newPath, blob, { contentType: 'image/jpeg' });
       if (upErr) throw upErr;
     }
-    const { data, error } = await sb.from('items').insert({
-      seller_id: state.user.id,
-      title: val('it'),
-      price_eur: Number(val('ip')),
-      category: val('ic'),
-      description: val('idesc') || null,
-      image_path: path
-    }).select('status').single();
-    if (error) throw error;
-    state.msg = data.status === 'freigegeben'
-      ? 'Dein Artikel ist veröffentlicht. Er bleibt einen Monat online.'
-      : 'Dein Artikel wird vom Vorstand geprüft, bevor er erscheint.';
+    if (editing) {
+      if (newPath) fields.image_path = newPath;
+      const { data, error } = await sb.from('items').update(fields).eq('id', editing.id).select('status').single();
+      if (error) throw error;
+      if (newPath && editing.image_path) await sb.storage.from('flea-images').remove([editing.image_path]);
+      state.msg = data.status === 'freigegeben'
+        ? 'Änderungen gespeichert.'
+        : 'Änderungen gespeichert. Der Artikel wird erneut vom Vorstand geprüft.';
+      state.editItem = null;
+    } else {
+      fields.seller_id = state.user.id;
+      fields.image_path = newPath;
+      const { data, error } = await sb.from('items').insert(fields).select('status').single();
+      if (error) throw error;
+      state.msg = data.status === 'freigegeben'
+        ? 'Dein Artikel ist veröffentlicht. Er bleibt einen Monat online.'
+        : 'Dein Artikel wird vom Vorstand geprüft, bevor er erscheint.';
+    }
     state.err = '';
   } catch (err) {
-    state.err = 'Einstellen fehlgeschlagen: ' + err.message;
+    state.err = (editing ? 'Speichern fehlgeschlagen: ' : 'Einstellen fehlgeschlagen: ') + err.message;
   }
-  try { await loadItems(); } catch (e) { state.err = state.err || 'Artikel konnten nicht neu geladen werden: ' + e.message; }
+  try { await loadItems(); } catch (e2) { state.err = state.err || 'Artikel konnten nicht neu geladen werden: ' + e2.message; }
   render();
 }
 
