@@ -5,8 +5,8 @@ const CATS = ['Schuhe', 'Bekleidung', 'Ausrüstung', 'Bälle', 'Sonstiges'];
 const params = new URLSearchParams(location.search);
 
 const state = {
-  booted: false, tab: 'spiel', user: null, isAdmin: false, displayName: '',
-  league: '', leagues: [], matches: [], messages: [], items: [],
+  booted: false, tab: 'markt', user: null, isAdmin: false, displayName: '',
+  messages: [], items: [],
   chatReady: false, msg: '', err: ''
 };
 
@@ -30,17 +30,6 @@ async function setUser(u) {
     state.displayName = data?.display_name || u.email;
     state.isAdmin = !!data?.is_admin;
   }
-}
-
-async function loadMatches() {
-  const { data: lg, error } = await sb.from('matches').select('league');
-  if (error) throw error;
-  state.leagues = [...new Set((lg || []).map(r => r.league))].sort((a, b) => a.localeCompare(b, 'de'));
-  if (!state.leagues.includes(state.league)) state.league = state.leagues[0] || '';
-  const { data, error: e2 } = await sb.from('matches').select('*')
-    .eq('league', state.league).order('matchday').order('kickoff', { ascending: true });
-  if (e2) throw e2;
-  state.matches = data || [];
 }
 
 async function loadItems() {
@@ -73,7 +62,6 @@ function subscribeChat() {
 
 async function load() {
   try {
-    if (state.tab === 'spiel' || state.tab === 'tabelle') await loadMatches();
     if (state.tab === 'chat' && state.user) { await loadMessages(); subscribeChat(); }
     if (state.tab === 'markt' || state.tab === 'admin') await loadItems();
   } catch (e) {
@@ -81,53 +69,44 @@ async function load() {
   }
 }
 
-async function go(tab) { state.tab = tab; await load(); render(); }
-async function pickLeague(v) { state.league = v; await load(); render(); }
+async function go(tab) { state.tab = tab; await load(); render(); window.scrollTo(0, 0); }
 
-function leagueSelect() {
-  const opts = state.leagues.map(l => `<option value="${esc(l)}" ${l === state.league ? 'selected' : ''}>${esc(l)}</option>`).join('');
-  return `<label for="lg">Liga</label><select id="lg" onchange="pickLeague(this.value)">${opts || '<option value="">Keine Daten</option>'}</select>`;
+function viewImpressum() {
+  return `<h2>Impressum</h2>
+  <div class="card">
+    <h3>Angaben zum Verein</h3>
+    <p>VfB 04 Grötzingen e.V.<br>Bruchwaldstraße 70<br>76229 Karlsruhe</p>
+    <p>Vereinsregister: VR 120010 (Verein für Bewegungsspiele 1904 Grötzingen e.V.)<br>Vereinsnummer im Badischen Fußballverband (BFV): 38023</p>
+    <p>E-Mail: info@vfb-groetzingen.de<br>Internet: <a href="https://www.vfb-groetzingen.de">www.vfb-groetzingen.de</a></p>
+    <p>Seitenverantwortlicher: Philipp Benz</p>
+  </div>
+  <div class="card">
+    <h3>Haftungsausschluss</h3>
+    <p class="muted">Die Inhalte dieser App wurden mit größtmöglicher Sorgfalt erstellt. Für die Richtigkeit, Vollständigkeit und Aktualität der Inhalte übernimmt der Verein keine Gewähr. Für Inhalte fremder Webseiten, auf die verlinkt wird, sind ausschließlich deren Betreiber verantwortlich.</p>
+    <h3>Urheberrecht</h3>
+    <p class="muted">Die durch den Verein erstellten Inhalte und Werke unterliegen dem deutschen Urheberrecht. Vervielfältigung, Bearbeitung, Verbreitung und jede Art der Verwertung außerhalb der Grenzen des Urheberrechts bedürfen der schriftlichen Zustimmung des Vereins. Inhalte Dritter sind als solche gekennzeichnet.</p>
+  </div>`;
 }
 
-function viewSpiel() {
-  let h = `<h2>Spielplan</h2><div class="card">${leagueSelect()}</div><div class="card">`;
-  if (!state.matches.length) return h + `<p class="muted">Für diese Liga sind noch keine Spiele hinterlegt.</p></div>`;
-  const next = state.matches.find(m => m.home_goals === null || m.away_goals === null);
-  state.matches.forEach(m => {
-    const played = m.home_goals !== null && m.away_goals !== null;
-    const cls = [m === next ? 'next' : '', isOwn(m.home) || isOwn(m.away) ? 'own' : ''].join(' ');
-    h += `<div class="match ${cls}">
-      <div class="md">ST ${m.matchday}<br>${fmtDay(m.kickoff)}</div>
-      <div>${esc(m.home)} – ${esc(m.away)}</div>
-      <div class="score">${played ? `${m.home_goals} : ${m.away_goals}` : '–'}</div></div>`;
-  });
-  return h + `</div>`;
-}
-
-function standings() {
-  const rows = {};
-  const get = n => (rows[n] ||= { name: n, P: 0, W: 0, D: 0, L: 0, GF: 0, GA: 0, Pts: 0 });
-  state.matches.forEach(m => { get(m.home); get(m.away); });
-  state.matches.filter(m => m.home_goals !== null && m.away_goals !== null).forEach(m => {
-    const h = get(m.home), a = get(m.away);
-    h.P++; a.P++;
-    h.GF += m.home_goals; h.GA += m.away_goals;
-    a.GF += m.away_goals; a.GA += m.home_goals;
-    if (m.home_goals > m.away_goals) { h.W++; h.Pts += 3; a.L++; }
-    else if (m.home_goals < m.away_goals) { a.W++; a.Pts += 3; h.L++; }
-    else { h.D++; a.D++; h.Pts++; a.Pts++; }
-  });
-  return Object.values(rows).sort((x, y) => y.Pts - x.Pts || (y.GF - y.GA) - (x.GF - x.GA) || y.GF - x.GF || x.name.localeCompare(y.name, 'de'));
-}
-
-function viewTabelle() {
-  if (!state.matches.length) return `<h2>Tabellen</h2><div class="card">${leagueSelect()}</div><p class="muted">Keine Daten vorhanden.</p>`;
-  const rows = standings();
-  return `<h2>Tabellen</h2><div class="card">${leagueSelect()}</div>
-  <div class="card" style="overflow-x:auto"><table>
-    <thead><tr><th>Pl.</th><th>Mannschaft</th><th class="num">Sp</th><th class="num">S</th><th class="num">U</th><th class="num">N</th><th class="num">Tore</th><th class="num">Pkt</th></tr></thead>
-    <tbody>${rows.map((r, i) => `<tr class="${isOwn(r.name) ? 'own' : ''}"><td>${i + 1}</td><td>${esc(r.name)}</td><td class="num">${r.P}</td><td class="num">${r.W}</td><td class="num">${r.D}</td><td class="num">${r.L}</td><td class="num">${r.GF}:${r.GA}</td><td class="num">${r.Pts}</td></tr>`).join('')}</tbody>
-  </table></div>`;
+function viewDatenschutz() {
+  return `<h2>Datenschutz</h2>
+  <div class="card">
+    <p>Der Schutz deiner persönlichen Daten ist uns wichtig. Diese Übersicht beschreibt, welche Daten in dieser App verarbeitet werden. Die vollständige Datenschutzerklärung des Vereins findest du unter <a href="https://vfb-groetzingen.de/datenschutz/" target="_blank" rel="noopener">vfb-groetzingen.de/datenschutz</a>.</p>
+    <h3>Verantwortlicher</h3>
+    <p>VfB 04 Grötzingen e.V., Bruchwaldstraße 70, 76229 Karlsruhe, info@vfb-groetzingen.de</p>
+    <h3>Welche Daten werden verarbeitet?</h3>
+    <ul>
+      <li><b>Konto:</b> Name, E-Mail-Adresse und Passwort (verschlüsselt gespeichert). Die E-Mail-Adresse muss bestätigt werden.</li>
+      <li><b>Chat:</b> Von dir verfasste Nachrichten inklusive Anzeigename und Zeitpunkt.</li>
+      <li><b>Flohmarkt:</b> Angaben zu deinen Artikeln (Titel, Preis, Kategorie, Beschreibung, optionales Foto).</li>
+    </ul>
+    <h3>Zweck und Speicherung</h3>
+    <p>Die Daten werden ausschließlich für Anmeldung, Chat und Flohmarkt verwendet. Flohmarktartikel werden nach einem Monat per E-Mail zur Verlängerung angefragt und ohne Reaktion nach einer weiteren Woche gelöscht.</p>
+    <h3>Dienstleister</h3>
+    <p>Die Daten werden auf Servern des Anbieters Supabase in der Region Frankfurt gespeichert. Der Versand von E-Mails erfolgt über Brevo.</p>
+    <h3>Deine Rechte</h3>
+    <p>Du hast das Recht auf Auskunft, Berichtigung, Löschung und Einschränkung der Verarbeitung sowie auf Widerspruch. Wende dich dazu an info@vfb-groetzingen.de.</p>
+  </div>`;
 }
 
 function viewChat() {
@@ -315,14 +294,14 @@ async function setStatus(id, status) {
 }
 
 function render() {
-  const tabs = [['spiel', 'Spielplan'], ['tabelle', 'Tabellen'], ['chat', 'Chat'], ['markt', 'Flohmarkt'], ['konto', state.user ? 'Konto' : 'Anmelden']];
+  const tabs = [['markt', 'Flohmarkt'], ['chat', 'Chat'], ['konto', state.user ? 'Konto' : 'Anmelden']];
   if (state.isAdmin) tabs.push(['admin', 'Prüfung']);
   document.getElementById('tabs').innerHTML = tabs.map(([k, l]) =>
     `<button role="tab" aria-selected="${state.tab === k}" onclick="go('${k}')">${l}</button>`).join('');
-  const views = { spiel: viewSpiel, tabelle: viewTabelle, chat: viewChat, markt: viewMarkt, konto: viewKonto, admin: viewAdmin };
+  const views = { chat: viewChat, markt: viewMarkt, konto: viewKonto, admin: viewAdmin, impressum: viewImpressum, datenschutz: viewDatenschutz };
   const notices = (state.msg ? `<div class="notice" role="status">${esc(state.msg)}</div>` : '')
     + (state.err ? `<div class="notice warn" role="alert">${esc(state.err)}</div>` : '');
-  document.getElementById('main').innerHTML = notices + (views[state.tab] || viewSpiel)();
+  document.getElementById('main').innerHTML = notices + (views[state.tab] || viewMarkt)();
   document.getElementById('who').textContent = state.user ? `Angemeldet: ${state.displayName}` : '';
   const m = document.getElementById('msgs');
   if (m) m.scrollTop = m.scrollHeight;
