@@ -11,5 +11,5 @@ window.APP_CONFIG = {
   
   
   // SITE_URL: "https://DEIN-GITHUB-NAME.github.io/REPO-NAME"
-  SITE_URL: "https://vfb-groetzingen.github.io/vfb-app/"
+  SITE_URL: "https://github.com/vfb-groetzingen/vfb-app.git"
 };
