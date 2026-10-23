@@ -298,7 +298,7 @@ async function signUp(e) {
   const { error } = await sb.auth.signUp({
     email: val('re'),
     password: val('rp'),
-    options: { data: { name: val('rn') }, emailRedirectTo: cfg.SITE_URL }
+    options: { data: { name: val('rn') }, emailRedirectTo: location.origin + location.pathname }
   });
   state.err = error ? error.message : '';
   state.msg = error ? '' : 'Fast geschafft: Bitte bestätige deine E-Mail-Adresse über den Link in der Mail.';
