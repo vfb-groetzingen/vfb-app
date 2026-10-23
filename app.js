@@ -207,7 +207,7 @@ async function addItem(e) {
   } catch (err) {
     state.err = 'Einstellen fehlgeschlagen: ' + err.message;
   }
-  await loadItems();
+  try { await loadItems(); } catch (e) { state.err = state.err || 'Artikel konnten nicht neu geladen werden: ' + e.message; }
   render();
 }
 
@@ -308,21 +308,32 @@ function render() {
   state.msg = ''; state.err = '';
 }
 
-sb.auth.onAuthStateChange(async (_event, session) => {
-  await setUser(session?.user || null);
-  if (!state.booted) {
-    state.booted = true;
-    const token = params.get('renew');
-    if (token) {
-      const { data, error } = await sb.rpc('renew_item', { p_token: token });
-      state.msg = error ? 'Verlängerung fehlgeschlagen.'
-        : data === 'verlängert' ? 'Dein Artikel wurde um einen Monat verlängert.'
-        : 'Dieser Link ist nicht mehr gültig.';
-      state.tab = 'markt';
-      history.replaceState({}, '', location.pathname);
+async function handleAuth(session) {
+  try {
+    await setUser(session?.user || null);
+    if (!state.booted) {
+      state.booted = true;
+      const token = params.get('renew');
+      if (token) {
+        const { data, error } = await sb.rpc('renew_item', { p_token: token });
+        state.msg = error ? 'Verlängerung fehlgeschlagen.'
+          : data === 'verlängert' ? 'Dein Artikel wurde um einen Monat verlängert.'
+          : 'Dieser Link ist nicht mehr gültig.';
+        state.tab = 'markt';
+        history.replaceState({}, '', location.pathname);
+      }
     }
+    if (!state.user && state.tab === 'admin') state.tab = 'konto';
+    await load();
+  } catch (e) {
+    state.err = 'Fehler beim Laden: ' + e.message;
   }
-  if (!state.user && state.tab === 'admin') state.tab = 'konto';
-  await load();
   render();
+}
+
+// Der Callback kehrt sofort zurück; die eigentliche Arbeit läuft danach,
+// damit sich Datenbankabfragen nicht gegenseitig blockieren.
+sb.auth.onAuthStateChange((_event, session) => {
+  setTimeout(() => handleAuth(session), 0);
 });
+render();
