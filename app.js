@@ -7,7 +7,7 @@ const state = {
   booted: false, tab: 'markt', user: null, isAdmin: false, displayName: '',
   messages: [], items: [], reports: [],
   chatReady: false, msg: '', err: '', editItem: null, inquiryId: null,
-  recovery: false,
+  recovery: false, pendingEmail: '',
   filter: { q: '', cat: '', sort: 'neu', nurFrei: false }
 };
 
@@ -418,7 +418,12 @@ function viewKonto() {
       <p class="muted">Dein Konto, deine Artikel und Fotos, deine Chat-Nachrichten und Meldungen werden endgültig gelöscht. Das lässt sich nicht rückgängig machen.</p>
       <button class="secondary" onclick="deleteAccount()">Konto löschen</button></div>`;
   }
-  return `<h2>Konto</h2>
+  const resendCard = state.pendingEmail
+    ? `<div class="card"><h3>Keine Bestätigungsmail erhalten?</h3>
+       <p class="muted">Prüfe den Spam-Ordner und warte ein paar Minuten. Danach kannst du die Mail erneut anfordern.</p>
+       <button class="secondary" onclick="resendConfirm()">Bestätigungsmail erneut senden</button></div>`
+    : '';
+  return `<h2>Konto</h2>${resendCard}
   <div class="card"><h3>Registrieren</h3>
     <p class="muted">Nach der Registrierung erhältst du eine E-Mail mit einem Bestätigungslink. Erst danach ist die Anmeldung möglich.</p>
     <form class="row" onsubmit="signUp(event)">
@@ -438,13 +443,39 @@ function viewKonto() {
 
 async function signUp(e) {
   e.preventDefault();
-  const { error } = await sb.auth.signUp({
-    email: val('re'),
+  const email = val('re');
+  const { data, error } = await sb.auth.signUp({
+    email,
     password: val('rp'),
     options: { data: { name: val('rn') }, emailRedirectTo: location.origin + location.pathname }
   });
-  state.err = error ? error.message : '';
-  state.msg = error ? '' : 'Fast geschafft: Bitte bestätige deine E-Mail-Adresse über den Link in der Mail.';
+  if (error) {
+    state.err = error.message;
+    state.msg = '';
+    render();
+    return;
+  }
+  // Supabase liefert bei bereits registrierten Adressen keinen Fehler, sondern ein Nutzerobjekt ohne Identitäten.
+  if (data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+    state.err = 'Für diese E-Mail-Adresse gibt es bereits ein Konto. Bitte melde dich an oder nutze „Passwort vergessen?“.';
+    state.msg = '';
+    render();
+    return;
+  }
+  state.pendingEmail = email;
+  state.err = '';
+  state.msg = 'Fast geschafft: Bitte bestätige deine E-Mail-Adresse über den Link in der Mail. Bitte auch den Spam-Ordner prüfen.';
+  render();
+}
+
+async function resendConfirm() {
+  const { error } = await sb.auth.resend({
+    type: 'signup',
+    email: state.pendingEmail,
+    options: { emailRedirectTo: location.origin + location.pathname }
+  });
+  state.err = error ? 'Mail konnte nicht erneut gesendet werden: ' + error.message : '';
+  state.msg = error ? '' : 'Die Bestätigungsmail wurde erneut gesendet. Bitte auch den Spam-Ordner prüfen.';
   render();
 }
 
