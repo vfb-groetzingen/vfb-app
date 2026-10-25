@@ -1,1 +1,21 @@
 
+name: Flohmarkt-Pflege
+
+on:
+  schedule:
+    - cron: "0 5 * * *"   # täglich 05:00 UTC
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Flohmarkt-Funktion aufrufen
+        env:
+          FUNCTION_URL: ${{ secrets.FLEA_FUNCTION_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          curl -fsS -X POST "$FUNCTION_URL" \
+            -H "x-cron-secret: $CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            -d '{}'
