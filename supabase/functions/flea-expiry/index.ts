@@ -73,7 +73,11 @@ Deno.serve(async (req) => {
         <p>Sportliche Grüße<br>VfB Grötzingen – Hier ist Sport daheim.</p>`,
     }),
   });
-  if (!res.ok) return json({ error: "Die Nachricht konnte nicht versendet werden." }, 502);
+  if (!res.ok) {
+  const detail = await res.text();
+  console.error("Brevo-Fehler", res.status, detail);
+  return json({ error: "Die Nachricht konnte nicht versendet werden." }, 502);
+}
 
   return json({ ok: true });
 });
