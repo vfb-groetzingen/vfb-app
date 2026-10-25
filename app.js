@@ -1,13 +1,14 @@
 const cfg = window.APP_CONFIG;
 const sb = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
-const CLUB = 'VfB Grötzingen';
 const CATS = ['Schuhe', 'Bekleidung', 'Ausrüstung', 'Bälle', 'Sonstiges'];
 const params = new URLSearchParams(location.search);
 
 const state = {
   booted: false, tab: 'markt', user: null, isAdmin: false, displayName: '',
-  messages: [], items: [],
-  chatReady: false, msg: '', err: '', editItem: null
+  messages: [], items: [], reports: [],
+  chatReady: false, msg: '', err: '', editItem: null, inquiryId: null,
+  recovery: false,
+  filter: { q: '', cat: '', sort: 'neu', nurFrei: false }
 };
 
 function esc(s) {
@@ -17,11 +18,18 @@ function val(id) { return document.getElementById(id).value.trim(); }
 function fmt(iso) {
   return iso ? new Date(iso).toLocaleString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Termin offen';
 }
-function fmtDay(iso) {
-  return iso ? new Date(iso).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
-}
 function price(p) { return Number(p).toFixed(2).replace('.', ',') + ' €'; }
-function isOwn(name) { return !!name && name.startsWith(CLUB); }
+
+// Liest eine Fehlermeldung aus einer Edge-Function-Antwort (Text des Servers statt generischer Meldung)
+async function fnErrorText(data, error) {
+  if (data?.error) return data.error;
+  if (error?.context) {
+    const txt = await error.context.text().catch(() => '');
+    try { const p = JSON.parse(txt); if (p.error) return p.error; } catch (_) {}
+    return `HTTP ${error.context.status}${txt ? ': ' + txt.slice(0, 200) : ''}`;
+  }
+  return error?.message || 'unbekannter Fehler';
+}
 
 async function setUser(u) {
   state.user = u; state.isAdmin = false; state.displayName = '';
@@ -52,6 +60,14 @@ async function loadMessages() {
   state.messages = (data || []).reverse();
 }
 
+async function loadReports() {
+  const { data, error } = await sb.from('reports')
+    .select('id,reason,created_at,item_id,message_id,items(id,title),messages(id,body),reporter:profiles(display_name)')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  state.reports = data || [];
+}
+
 function subscribeChat() {
   if (state.chatReady) return;
   state.chatReady = true;
@@ -64,6 +80,7 @@ async function load() {
   try {
     if (state.tab === 'chat' && state.user) { await loadMessages(); subscribeChat(); }
     if (state.tab === 'markt' || state.tab === 'admin') await loadItems();
+    if (state.isAdmin) await loadReports();
   } catch (e) {
     state.err = 'Daten konnten nicht geladen werden: ' + e.message;
   }
@@ -98,22 +115,26 @@ function viewDatenschutz() {
     <ul>
       <li><b>Konto:</b> Name, E-Mail-Adresse und Passwort (verschlüsselt gespeichert). Die E-Mail-Adresse muss bestätigt werden.</li>
       <li><b>Chat:</b> Von dir verfasste Nachrichten inklusive Anzeigename und Zeitpunkt.</li>
-      <li><b>Flohmarkt:</b> Angaben zu deinen Artikeln (Titel, Preis, Kategorie, Beschreibung, optionales Foto).</li>
+      <li><b>Flohmarkt:</b> Angaben zu deinen Artikeln (Titel, Preis, Kategorie, Beschreibung, optionales Foto, Status „verkauft“).</li>
+      <li><b>Anfragen:</b> Wenn du einen Verkäufer anfragst, werden dein Anzeigename und deine Nachricht per E-Mail an den Verkäufer weitergegeben. Deine E-Mail-Adresse wird dabei als Antwortadresse genutzt. Die Adresse des Verkäufers erfährst du dadurch nicht. Zur Begrenzung von Spam wird gespeichert, wann du Anfragen gesendet hast; dieses Protokoll wird nach zwei Tagen gelöscht.</li>
+      <li><b>Meldungen:</b> Meldest du einen Artikel oder eine Chat-Nachricht, werden deine Begründung und dein Anzeigename dem Vorstand angezeigt.</li>
     </ul>
     <h3>Zweck und Speicherung</h3>
     <p>Die Daten werden ausschließlich für Anmeldung, Chat und Flohmarkt verwendet. Flohmarktartikel werden nach einem Monat per E-Mail zur Verlängerung angefragt und ohne Reaktion nach einer weiteren Woche gelöscht.</p>
     <h3>Dienstleister</h3>
     <p>Die Daten werden auf Servern des Anbieters Supabase in der Region Frankfurt gespeichert. Der Versand von E-Mails erfolgt über Brevo.</p>
+    <h3>Löschung</h3>
+    <p>Du kannst dein Konto jederzeit im Bereich „Konto“ löschen. Dabei werden deine Daten, deine Artikel, Fotos, Chat-Nachrichten und Meldungen entfernt.</p>
     <h3>Deine Rechte</h3>
     <p>Du hast das Recht auf Auskunft, Berichtigung, Löschung und Einschränkung der Verarbeitung sowie auf Widerspruch. Wende dich dazu an info@vfb-groetzingen.de.</p>
   </div>`;
 }
 
 function viewChat() {
-  if (!state.user) return `<h2>Vereinschat</h2><div class="notice warn">Der Chat ist nur für Mitglieder mit bestätigter E-Mail-Adresse. Bitte im Bereich Anmelden einloggen.</div>`;
+  if (!state.user) return `<h2>Vereinschat</h2><div class="notice warn">Der Chat ist nur für Mitglieder mit bestätigter E-Mail-Adresse. Bitte im Bereich Konto anmelden.</div>`;
   return `<h2>Vereinschat</h2>
   <div class="msgs" id="msgs" role="log" aria-live="polite">
-    ${state.messages.map(m => `<div class="msg"><b>${esc(m.profiles?.display_name || 'Mitglied')}</b><span>${fmt(m.created_at)}</span>${state.isAdmin ? ` <button class="link" onclick="delMsg(${m.id})">löschen</button>` : ''}<p>${esc(m.body)}</p></div>`).join('') || '<p class="muted">Noch keine Nachrichten.</p>'}
+    ${state.messages.map(m => `<div class="msg"><b>${esc(m.profiles?.display_name || 'Mitglied')}</b><span>${fmt(m.created_at)}</span>${m.user_id !== state.user.id ? ` <button class="link" onclick="reportMsg(${m.id})">melden</button>` : ''}${state.isAdmin ? ` <button class="link" onclick="delMsg(${m.id})">löschen</button>` : ''}<p>${esc(m.body)}</p></div>`).join('') || '<p class="muted">Noch keine Nachrichten.</p>'}
   </div>
   <form class="row" onsubmit="sendMsg(event)">
     <div class="field"><label for="ci">Nachricht</label><input id="ci" maxlength="500" required autocomplete="off"></div>
@@ -126,14 +147,45 @@ async function sendMsg(e) {
   const body = val('ci');
   if (!body) return;
   const { error } = await sb.from('messages').insert({ user_id: state.user.id, body });
-  if (error) state.err = 'Nachricht konnte nicht gesendet werden: ' + error.message;
+  state.err = error ? 'Nachricht konnte nicht gesendet werden: ' + error.message : '';
+  if (!error) await loadMessages();
   render();
 }
 
 async function delMsg(id) {
+  if (!confirm('Nachricht wirklich löschen?')) return;
   const { error } = await sb.from('messages').delete().eq('id', id);
   state.err = error ? error.message : '';
   await loadMessages();
+  render();
+}
+
+async function askReason(was) {
+  const r = (window.prompt(`Was stört dich an diesem ${was}? (3 bis 300 Zeichen)`) || '').trim();
+  if (!r) return null;
+  if (r.length < 3 || r.length > 300) {
+    state.err = 'Die Begründung muss zwischen 3 und 300 Zeichen lang sein.';
+    render();
+    return null;
+  }
+  return r;
+}
+
+async function reportMsg(id) {
+  const reason = await askReason('Chat-Nachricht');
+  if (!reason) return;
+  const { error } = await sb.from('reports').insert({ reporter_id: state.user.id, message_id: id, reason });
+  state.msg = error ? '' : 'Danke. Der Vorstand prüft die Meldung.';
+  state.err = error ? 'Meldung fehlgeschlagen: ' + error.message : '';
+  render();
+}
+
+async function reportItem(id) {
+  const reason = await askReason('Artikel');
+  if (!reason) return;
+  const { error } = await sb.from('reports').insert({ reporter_id: state.user.id, item_id: id, reason });
+  state.msg = error ? '' : 'Danke. Der Vorstand prüft die Meldung.';
+  state.err = error ? 'Meldung fehlgeschlagen: ' + error.message : '';
   render();
 }
 
@@ -153,26 +205,83 @@ function itemForm() {
        </form></div>`;
 }
 
+function filterBar() {
+  const f = state.filter;
+  return `<div class="card filter" role="search">
+    <div class="row">
+      <div class="field"><label for="fq">Suche</label><input id="fq" type="search" placeholder="Titel oder Beschreibung" value="${esc(f.q)}" oninput="setFilter()"></div>
+      <div class="field"><label for="fc">Kategorie</label><select id="fc" onchange="setFilter()"><option value="">Alle</option>${CATS.map(c => `<option ${f.cat === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
+      <div class="field"><label for="fs">Sortierung</label><select id="fs" onchange="setFilter()">
+        <option value="neu" ${f.sort === 'neu' ? 'selected' : ''}>Neueste zuerst</option>
+        <option value="preis-auf" ${f.sort === 'preis-auf' ? 'selected' : ''}>Preis aufsteigend</option>
+        <option value="preis-ab" ${f.sort === 'preis-ab' ? 'selected' : ''}>Preis absteigend</option>
+      </select></div>
+      <div class="field check"><label><input type="checkbox" id="fv" onchange="setFilter()" ${f.nurFrei ? 'checked' : ''}> nur verfügbare Artikel</label></div>
+    </div>
+  </div>`;
+}
+
+function setFilter() {
+  state.filter = {
+    q: document.getElementById('fq').value.trim().toLowerCase(),
+    cat: document.getElementById('fc').value,
+    sort: document.getElementById('fs').value,
+    nurFrei: document.getElementById('fv').checked
+  };
+  renderList();
+}
+
+function filteredItems() {
+  const f = state.filter;
+  const list = state.items.filter(it => {
+    if (f.cat && it.category !== f.cat) return false;
+    if (f.nurFrei && it.sold_at) return false;
+    if (f.q && !`${it.title} ${it.description || ''}`.toLowerCase().includes(f.q)) return false;
+    return true;
+  });
+  if (f.sort === 'preis-auf') list.sort((a, b) => Number(a.price_eur) - Number(b.price_eur));
+  if (f.sort === 'preis-ab') list.sort((a, b) => Number(b.price_eur) - Number(a.price_eur));
+  return list;
+}
+
+function inquiryForm(id) {
+  return `<form class="row" onsubmit="sendInquiry(event,'${id}')"><div class="field full"><label for="iq-${id}">Deine Nachricht an den Verkäufer</label><textarea id="iq-${id}" rows="2" required minlength="5" maxlength="500"></textarea></div><button class="primary" type="submit">Senden</button> <button class="secondary" type="button" onclick="closeInquiry()">Abbrechen</button></form>`;
+}
+
+function itemCard(it) {
+  const mine = !!state.user && it.seller_id === state.user.id;
+  const sold = !!it.sold_at;
+  let action = '';
+  if (!state.user) action = '<p class="muted">Zum Anfragen bitte anmelden.</p>';
+  else if (!mine && sold) action = '<p class="muted">Dieser Artikel ist bereits verkauft.</p>';
+  else if (!mine) action = state.inquiryId === it.id
+    ? inquiryForm(it.id)
+    : `<button class="secondary" onclick="openInquiry('${it.id}')">Anfrage senden</button>`;
+  return `<div class="item">
+    ${it.imgUrl ? `<img class="thumb" src="${esc(it.imgUrl)}" alt="Foto zu ${esc(it.title)}" loading="lazy">` : ''}
+    <div>
+      <h3>${esc(it.title)}<span class="price">${price(it.price_eur)}</span></h3>
+      <span class="tag">${esc(it.category)}</span>${sold ? '<span class="tag sold-tag">Verkauft</span>' : ''}${it.status !== 'freigegeben' ? '<span class="tag warn-tag">In Prüfung</span>' : ''}
+      <p>${esc(it.description || '')}</p>
+      ${mine ? `<p><span class="muted">Dein Artikel</span> <button class="link" onclick="editItem('${it.id}')">Bearbeiten</button> <button class="link" onclick="toggleSold('${it.id}', ${!sold})">${sold ? 'Wieder verfügbar machen' : 'Als verkauft markieren'}</button> <button class="link" onclick="delItem('${it.id}')">Entfernen</button></p>` : ''}
+      ${action}
+      ${state.user && !mine ? `<p><button class="link" onclick="reportItem('${it.id}')">Artikel melden</button></p>` : ''}
+    </div></div>`;
+}
+
+function renderList() {
+  const el = document.getElementById('itemlist');
+  if (!el) return;
+  const list = filteredItems();
+  el.innerHTML = list.map(itemCard).join('')
+    || `<p class="muted">${state.items.length ? 'Keine Artikel für diese Auswahl.' : 'Noch keine Artikel.'}</p>`;
+}
+
 function viewMarkt() {
   const form = state.user
     ? itemForm()
-    : `<div class="notice">Zum Einstellen von Artikeln bitte anmelden.</div>`;
-  const list = state.items.map(it => {
-    const mine = state.user && it.seller_id === state.user.id;
-    return `<div class="item">
-      ${it.imgUrl ? `<img class="thumb" src="${esc(it.imgUrl)}" alt="Foto zu ${esc(it.title)}">` : ''}
-      <div>
-        <h3>${esc(it.title)}<span class="price">${price(it.price_eur)}</span></h3>
-        <span class="tag">${esc(it.category)}</span>${it.status !== 'freigegeben' ? '<span class="tag warn-tag">In Prüfung</span>' : ''}
-        <p>${esc(it.description || '')}</p>
-        ${mine ? `<span class="muted">Dein Artikel</span> <button class="link" onclick="editItem('${it.id}')">Bearbeiten</button> <button class="link" onclick="delItem('${it.id}')">Entfernen</button>` : ''}
-        ${!mine && state.user ? (state.inquiryId === it.id
-          ? `<form class="row" onsubmit="sendInquiry(event,'${it.id}')"><div class="field full"><label for="iq-${it.id}">Deine Nachricht an den Verkäufer</label><textarea id="iq-${it.id}" rows="2" required minlength="5" maxlength="500"></textarea></div><button class="primary" type="submit">Senden</button> <button class="secondary" type="button" onclick="closeInquiry()">Abbrechen</button></form>`
-          : `<button class="secondary" onclick="openInquiry('${it.id}')">Anfrage senden</button>`) : ''}
-        ${!state.user ? '<p class="muted">Zum Anfragen bitte anmelden.</p>' : ''}
-      </div></div>`;
-  }).join('');
-  return `<h2>Flohmarkt für Sportartikel</h2>${form}<div class="card">${list || '<p class="muted">Noch keine Artikel.</p>'}</div>`;
+    : `<div class="notice">Zum Einstellen und Anfragen von Artikeln bitte im Bereich Konto anmelden. Angebote kannst du auch ohne Anmeldung ansehen.</div>`;
+  return `<h2>Flohmarkt für Sportartikel</h2>${form}${filterBar()}<div class="card" id="itemlist"></div>`;
 }
 
 function shrinkImage(file) {
@@ -207,17 +316,9 @@ async function sendInquiry(e, id) {
   const message = document.getElementById('iq-' + id).value.trim();
   const { data, error } = await sb.functions.invoke('flea-anfrage', { body: { item_id: id, message } });
   if (error || data?.error) {
-    let reason = data?.error || error?.message || 'unbekannter Fehler';
-    if (error?.context) {
-      const status = error.context.status;
-      const txt = await error.context.text().catch(() => '');
-      let parsed = null;
-      try { parsed = JSON.parse(txt); } catch (_) {}
-      reason = parsed?.error || `HTTP ${status}${txt ? ': ' + txt.slice(0, 200) : ''}`;
-    }
-    state.err = 'Anfrage fehlgeschlagen: ' + reason;
+    state.err = 'Anfrage fehlgeschlagen: ' + await fnErrorText(data, error);
   } else {
-    state.msg = 'Deine Anfrage wurde an den Verkäufer gesendet.';
+    state.msg = 'Deine Anfrage wurde an den Verkäufer gesendet. Du erhältst eine Bestätigung per E-Mail.';
     state.inquiryId = null;
   }
   render();
@@ -267,7 +368,18 @@ async function saveItem(e) {
   render();
 }
 
+async function toggleSold(id, sold) {
+  const { data, error } = await sb.from('items')
+    .update({ sold_at: sold ? new Date().toISOString() : null }).eq('id', id).select('id');
+  const failed = error || !data || data.length === 0;
+  state.err = failed ? 'Status konnte nicht geändert werden' + (error ? ': ' + error.message : '.') : '';
+  state.msg = failed ? '' : (sold ? 'Artikel als verkauft markiert. Anfragen sind nicht mehr möglich.' : 'Artikel ist wieder verfügbar.');
+  try { await loadItems(); } catch (_) {}
+  render();
+}
+
 async function delItem(id) {
+  if (!confirm('Artikel wirklich entfernen?')) return;
   const it = state.items.find(x => x.id === id);
   if (it?.image_path) await sb.storage.from('flea-images').remove([it.image_path]);
   const { error } = await sb.from('items').delete().eq('id', id);
@@ -278,9 +390,33 @@ async function delItem(id) {
 }
 
 function viewKonto() {
+  if (state.recovery) {
+    return `<h2>Neues Passwort</h2>
+    <div class="card"><p class="muted">Bitte lege jetzt ein neues Passwort fest (mindestens 8 Zeichen).</p>
+      <form class="row" onsubmit="setNewPassword(event)">
+        <div class="field"><label for="np">Neues Passwort</label><input id="np" type="password" minlength="8" required autocomplete="new-password"></div>
+        <button class="primary" type="submit">Speichern</button>
+        <button class="secondary" type="button" onclick="cancelRecovery()">Abbrechen</button>
+      </form></div>`;
+  }
   if (state.user) {
-    return `<h2>Konto</h2><div class="card"><p>Angemeldet als <b>${esc(state.displayName)}</b> (${esc(state.user.email)}).</p>
-      <button class="secondary" onclick="signOut()">Abmelden</button></div>`;
+    return `<h2>Konto</h2>
+    <div class="card"><p>Angemeldet als <b>${esc(state.displayName)}</b> (${esc(state.user.email)}).</p>
+      <button class="secondary" onclick="signOut()">Abmelden</button></div>
+    <div class="card"><h3>Anzeigename</h3>
+      <p class="muted">Dieser Name erscheint im Chat und bei Anfragen an Verkäufer.</p>
+      <form class="row" onsubmit="changeName(event)">
+        <div class="field"><label for="dn">Anzeigename</label><input id="dn" required minlength="2" maxlength="60" value="${esc(state.displayName)}" autocomplete="name"></div>
+        <button class="secondary" type="submit">Speichern</button>
+      </form></div>
+    <div class="card"><h3>Passwort ändern</h3>
+      <form class="row" onsubmit="changePassword(event)">
+        <div class="field"><label for="np">Neues Passwort (mind. 8 Zeichen)</label><input id="np" type="password" minlength="8" required autocomplete="new-password"></div>
+        <button class="secondary" type="submit">Passwort ändern</button>
+      </form></div>
+    <div class="card"><h3>Konto löschen</h3>
+      <p class="muted">Dein Konto, deine Artikel und Fotos, deine Chat-Nachrichten und Meldungen werden endgültig gelöscht. Das lässt sich nicht rückgängig machen.</p>
+      <button class="secondary" onclick="deleteAccount()">Konto löschen</button></div>`;
   }
   return `<h2>Konto</h2>
   <div class="card"><h3>Registrieren</h3>
@@ -296,6 +432,7 @@ function viewKonto() {
       <div class="field"><label for="le">E-Mail</label><input id="le" type="email" required autocomplete="email"></div>
       <div class="field"><label for="lp">Passwort</label><input id="lp" type="password" required autocomplete="current-password"></div>
       <button class="secondary" type="submit">Anmelden</button>
+      <button class="link" type="button" onclick="forgotPassword()">Passwort vergessen?</button>
     </form></div>`;
 }
 
@@ -322,23 +459,130 @@ async function signIn(e) {
   }
 }
 
+async function forgotPassword() {
+  const email = (document.getElementById('le')?.value || '').trim();
+  if (!email) {
+    state.err = 'Bitte trage oben bei „E-Mail“ deine Adresse ein und klicke dann erneut auf „Passwort vergessen?“.';
+    render();
+    return;
+  }
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+  state.err = error ? 'Die E-Mail konnte nicht gesendet werden: ' + error.message : '';
+  state.msg = error ? '' : 'Falls ein Konto mit dieser Adresse existiert, wurde eine E-Mail mit einem Link zum Zurücksetzen gesendet.';
+  render();
+}
+
+async function setNewPassword(e) {
+  e.preventDefault();
+  const { error } = await sb.auth.updateUser({ password: val('np') });
+  if (error) {
+    state.err = 'Passwort konnte nicht gespeichert werden: ' + error.message;
+    render();
+    return;
+  }
+  state.recovery = false;
+  state.msg = 'Dein neues Passwort ist gespeichert.';
+  history.replaceState({}, '', location.pathname);
+  render();
+}
+
+function cancelRecovery() {
+  state.recovery = false;
+  history.replaceState({}, '', location.pathname);
+  render();
+}
+
+async function changeName(e) {
+  e.preventDefault();
+  const { error } = await sb.rpc('update_display_name', { p_name: val('dn') });
+  if (!error) await setUser(state.user);
+  state.err = error ? 'Name konnte nicht gespeichert werden: ' + error.message : '';
+  state.msg = error ? '' : 'Dein Anzeigename wurde geändert.';
+  render();
+}
+
+async function changePassword(e) {
+  e.preventDefault();
+  const { error } = await sb.auth.updateUser({ password: val('np') });
+  state.err = error ? 'Passwort konnte nicht geändert werden: ' + error.message : '';
+  state.msg = error ? '' : 'Dein Passwort wurde geändert.';
+  render();
+}
+
+async function deleteAccount() {
+  if (!confirm('Dein Konto und alle deine Daten werden endgültig gelöscht. Fortfahren?')) return;
+  const { data, error } = await sb.functions.invoke('konto-loeschen', { body: {} });
+  if (error || data?.error) {
+    state.err = 'Konto konnte nicht gelöscht werden: ' + await fnErrorText(data, error);
+    render();
+    return;
+  }
+  await sb.auth.signOut();
+  state.tab = 'markt';
+  state.msg = 'Dein Konto wurde gelöscht.';
+  render();
+}
+
 async function signOut() {
   await sb.auth.signOut();
   state.msg = 'Du bist abgemeldet.';
 }
 
+function reportCard(r) {
+  const isItem = !!r.item_id;
+  const exists = isItem ? !!r.items : !!r.messages;
+  const target = isItem
+    ? (r.items ? `Artikel: <b>${esc(r.items.title)}</b>` : 'Artikel bereits gelöscht')
+    : (r.messages ? `Chat-Nachricht: „${esc(r.messages.body)}“` : 'Nachricht bereits gelöscht');
+  const targetId = isItem ? `'${r.item_id}'` : r.message_id;
+  return `<div class="item"><div>
+    <p>${target}</p>
+    <p class="muted">Begründung: ${esc(r.reason)}<br>Gemeldet von ${esc(r.reporter?.display_name || 'Mitglied')} am ${fmt(r.created_at)}</p>
+    ${exists ? `<button class="primary" onclick="removeReported(${r.id}, ${isItem}, ${targetId})">${isItem ? 'Artikel entfernen' : 'Nachricht entfernen'}</button> ` : ''}
+    <button class="secondary" onclick="dismissReport(${r.id})">Meldung verwerfen</button>
+  </div></div>`;
+}
+
 function viewAdmin() {
   if (!state.isAdmin) return '<p class="muted">Kein Zugriff.</p>';
-  const list = state.items.filter(i => i.status === 'pruefung');
-  return `<h2>Prüfung Flohmarkt</h2>` + (list.length
-    ? list.map(it => `<div class="item"><div>
+  const pending = state.items.filter(i => i.status === 'pruefung');
+  return `<h2>Prüfung</h2>
+  <h3>Gemeldete Inhalte (${state.reports.length})</h3>
+  ${state.reports.length ? state.reports.map(reportCard).join('') : '<p class="muted">Keine Meldungen.</p>'}
+  <h3 style="margin-top:20px">Artikel in Prüfung (${pending.length})</h3>
+  ${pending.length ? pending.map(it => `<div class="item"><div>
         <h3>${esc(it.title)}<span class="price">${price(it.price_eur)}</span></h3>
         <span class="tag">${esc(it.category)}</span><span class="tag warn-tag">${esc(it.check_result)}</span>
         <p>${esc(it.description || '')}</p>
         <button class="primary" onclick="setStatus('${it.id}','freigegeben')">Freigeben</button>
         <button class="secondary" onclick="setStatus('${it.id}','abgelehnt')">Ablehnen</button>
       </div></div>`).join('')
-    : '<p class="muted">Keine Artikel zur Prüfung.</p>');
+    : '<p class="muted">Keine Artikel zur Prüfung.</p>'}`;
+}
+
+async function removeReported(reportId, isItem, targetId) {
+  if (!confirm(isItem ? 'Artikel wirklich entfernen?' : 'Nachricht wirklich entfernen?')) return;
+  let error = null;
+  if (isItem) {
+    const { data: it } = await sb.from('items').select('image_path').eq('id', targetId).maybeSingle();
+    if (it?.image_path) await sb.storage.from('flea-images').remove([it.image_path]);
+    ({ error } = await sb.from('items').delete().eq('id', targetId));
+  } else {
+    ({ error } = await sb.from('messages').delete().eq('id', targetId));
+  }
+  state.err = error ? 'Entfernen fehlgeschlagen: ' + error.message : '';
+  state.msg = error ? '' : 'Inhalt entfernt. Die Meldung wurde mit entfernt.';
+  await loadReports();
+  await loadItems();
+  render();
+}
+
+async function dismissReport(id) {
+  const { error } = await sb.from('reports').delete().eq('id', id);
+  state.err = error ? 'Meldung konnte nicht verworfen werden: ' + error.message : '';
+  state.msg = error ? '' : 'Meldung verworfen.';
+  await loadReports();
+  render();
 }
 
 async function setStatus(id, status) {
@@ -351,9 +595,14 @@ async function setStatus(id, status) {
 
 function render() {
   const tabs = [['markt', 'Flohmarkt'], ['chat', 'Chat'], ['konto', state.user ? 'Konto' : 'Anmelden']];
-  if (state.isAdmin) tabs.push(['admin', 'Prüfung']);
+  if (state.isAdmin) tabs.push(['admin', `Prüfung${state.reports.length ? ` (${state.reports.length})` : ''}`]);
   document.getElementById('tabs').innerHTML = tabs.map(([k, l]) =>
     `<button role="tab" aria-selected="${state.tab === k}" onclick="go('${k}')">${l}</button>`).join('');
+  if (!state.booted) {
+    document.getElementById('main').innerHTML = '<p class="muted" role="status">Lade …</p>';
+    document.getElementById('who').textContent = '';
+    return;
+  }
   const views = { chat: viewChat, markt: viewMarkt, konto: viewKonto, admin: viewAdmin, impressum: viewImpressum, datenschutz: viewDatenschutz };
   const notices = (state.msg ? `<div class="notice" role="status">${esc(state.msg)}</div>` : '')
     + (state.err ? `<div class="notice warn" role="alert">${esc(state.err)}</div>` : '');
@@ -361,12 +610,14 @@ function render() {
   document.getElementById('who').textContent = state.user ? `Angemeldet: ${state.displayName}` : '';
   const m = document.getElementById('msgs');
   if (m) m.scrollTop = m.scrollHeight;
+  if (state.tab === 'markt' || state.tab === 'admin') renderList();
   state.msg = ''; state.err = '';
 }
 
-async function handleAuth(session) {
+async function handleAuth(session, event) {
   try {
     await setUser(session?.user || null);
+    if (event === 'PASSWORD_RECOVERY') { state.recovery = true; state.tab = 'konto'; }
     if (!state.booted) {
       state.booted = true;
       const token = params.get('renew');
@@ -380,6 +631,7 @@ async function handleAuth(session) {
       }
     }
     if (!state.user && state.tab === 'admin') state.tab = 'konto';
+    if (!state.isAdmin) state.reports = [];
     await load();
   } catch (e) {
     state.err = 'Fehler beim Laden: ' + e.message;
@@ -389,7 +641,9 @@ async function handleAuth(session) {
 
 // Der Callback kehrt sofort zurück; die eigentliche Arbeit läuft danach,
 // damit sich Datenbankabfragen nicht gegenseitig blockieren.
-sb.auth.onAuthStateChange((_event, session) => {
-  setTimeout(() => handleAuth(session), 0);
+// TOKEN_REFRESHED wird ignoriert, damit offene Formulare nicht neu geladen werden.
+sb.auth.onAuthStateChange((event, session) => {
+  if (event === 'TOKEN_REFRESHED') return;
+  setTimeout(() => handleAuth(session, event), 0);
 });
 render();

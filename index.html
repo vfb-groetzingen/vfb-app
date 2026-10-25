@@ -3,6 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1f2a33">
+<meta name="description" content="Vereins-App des VfB 04 Grötzingen: Flohmarkt für Sportartikel und Vereinschat.">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="VfB Grötzingen">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="logo.png">
+<link rel="apple-touch-icon" href="logo.png">
 <title>VfB Grötzingen – Vereins-App</title>
 <style>
 :root{--ink:#1d2630;--muted:#5b6876;--line:#dfe5ea;--bg:#f5f7f9;--head:#1f2a33;--accent:#2f6b4f;--accent-d:#24543e;--warn:#9a3412;--warn-bg:#fef3c7;--err:#b3261e;--ok-bg:#e6f4ea}
@@ -54,12 +63,17 @@ tr.own td{background:var(--ok-bg);font-weight:600}
 .price{font-weight:700;color:var(--accent-d);margin-left:6px}
 .tag{display:inline-block;background:#e8edf1;color:var(--head);font-size:12px;border-radius:99px;padding:2px 8px;margin:0 6px 4px 0}
 .warn-tag{background:var(--warn-bg);color:var(--warn)}
+.sold-tag{background:#e5e7eb;color:#374151}
+.field.check{flex:0 0 auto;min-width:0;align-self:center}
+.field.check label{font-weight:400;display:flex;gap:6px;align-items:center;margin:0}
+.filter{padding-bottom:6px}
+.item:last-child{border-bottom:0}
 footer{text-align:center;font-size:13px;color:var(--muted);padding:16px;border-top:1px solid var(--line);background:#fff}
 footer a{color:var(--accent-d)}
 @media (max-width:560px){.match{grid-template-columns:70px 1fr auto}.thumb{width:72px;height:72px}}
 @media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
 </style>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="config.js"></script>
 </head>
 <body>
@@ -72,5 +86,10 @@ footer a{color:var(--accent-d)}
 <main id="main"><p class="muted">Lade …</p></main>
 <footer>VfB 04 Grötzingen e.V. · <a href="https://www.vfb-groetzingen.de">www.vfb-groetzingen.de</a> · <a href="#" onclick="go('impressum');return false">Impressum</a> · <a href="#" onclick="go('datenschutz');return false">Datenschutz</a></footer>
 <script src="app.js"></script>
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+}
+</script>
 </body>
 </html>
