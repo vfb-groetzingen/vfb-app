@@ -7,7 +7,7 @@ window.APP_CONFIG = {
   
 
   // SUPABASE_ANON_KEY: "DEIN-ANON-KEY",
-  SUPABASE_ANON_KEY: "sb_publishable_O2l-aCqvWSK-6eXg3-72Mw_Gu49BYd6",
+  SUPABASE_ANON_KEY: "sb_publishable_w4VWEVJiGhv26lo0svPwEQ_dd7unr8R",
   
   
   // SITE_URL: "https://DEIN-GITHUB-NAME.github.io/REPO-NAME"
