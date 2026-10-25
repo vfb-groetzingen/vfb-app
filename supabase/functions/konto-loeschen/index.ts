@@ -45,7 +45,8 @@ Deno.serve(async (req) => {
     }
   }
 
-  const { error: dErr } = await admin.auth.admin.deleteUser(userId);
+  // false = endgültig löschen (kein "Soft Delete"). Sonst bleibt die Adresse blockiert und es kommt keine Bestätigungsmail.
+  const { error: dErr } = await admin.auth.admin.deleteUser(userId, false);
   if (dErr) {
     console.error("Konto löschen fehlgeschlagen", dErr.message);
     return json({ error: "Das Konto konnte nicht gelöscht werden. Bitte wende dich an info@vfb-groetzingen.de." }, 500);
