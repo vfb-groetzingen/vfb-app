@@ -208,7 +208,13 @@ async function sendInquiry(e, id) {
   const { data, error } = await sb.functions.invoke('flea-anfrage', { body: { item_id: id, message } });
   if (error || data?.error) {
     let reason = data?.error || error?.message || 'unbekannter Fehler';
-    if (error?.context?.json) { try { reason = (await error.context.json()).error || reason; } catch (_) {} }
+    if (error?.context) {
+      const status = error.context.status;
+      const txt = await error.context.text().catch(() => '');
+      let parsed = null;
+      try { parsed = JSON.parse(txt); } catch (_) {}
+      reason = parsed?.error || `HTTP ${status}${txt ? ': ' + txt.slice(0, 200) : ''}`;
+    }
     state.err = 'Anfrage fehlgeschlagen: ' + reason;
   } else {
     state.msg = 'Deine Anfrage wurde an den Verkäufer gesendet.';
