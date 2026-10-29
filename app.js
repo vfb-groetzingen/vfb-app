@@ -677,4 +677,19 @@ sb.auth.onAuthStateChange((event, session) => {
   if (event === 'TOKEN_REFRESHED') return;
   setTimeout(() => handleAuth(session, event), 0);
 });
+// Besucherzähler: Ein Besuch wird pro Browser-Sitzung einmal gezählt, Neuladen zählt nicht erneut.
+async function countVisit() {
+  const el = document.getElementById('visits');
+  if (!el) return;
+  try {
+    const schon = sessionStorage.getItem('vfb-gezaehlt') === '1';
+    const { data, error } = await sb.rpc(schon ? 'besucher_stand' : 'besucher_zaehlen');
+    if (error) throw error;
+    if (!schon) sessionStorage.setItem('vfb-gezaehlt', '1');
+    el.textContent = Number(data).toLocaleString('de-DE');
+  } catch (_) {
+    el.textContent = '–';
+  }
+}
+countVisit();
 render();
