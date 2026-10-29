@@ -389,6 +389,34 @@ async function delItem(id) {
   render();
 }
 
+function viewSpenden() {
+  const cfg = window.APP_CONFIG || {};
+  const link = (cfg.SPENDEN_PAYPAL_URL || '').trim();
+  const qr = (cfg.SPENDEN_QR_BILD || 'spenden-qr.png').trim();
+  return `<h2>Unterstützen</h2>
+  <div class="card">
+    <h3>Warum eine Spende?</h3>
+    <p class="lead">Diese App ist für alle Mitglieder und Besucher des VfB Grötzingen kostenlos. Sie wird ehrenamtlich entwickelt und betrieben. Wenn dir die App gefällt, kannst du den Verein auf diesem Weg unterstützen.</p>
+    <h3>Wofür?</h3>
+    <p>Spenden gehen an die Vereinskasse des VfB 04 Grötzingen e.V. Damit finanziert der Verein seinen Sportbetrieb, also Training und Spielbetrieb der Jugend- und Seniorenmannschaften, und die Arbeit, die dahintersteckt.</p>
+    <p>Jede Spende hilft, egal wie groß sie ist.</p>
+    <div class="spenden-grid">
+      <div class="spenden-box">
+        <h3>Per PayPal</h3>
+        ${link
+          ? `<a class="btn-paypal" href="${esc(link)}" target="_blank" rel="noopener noreferrer">Jetzt per PayPal spenden</a>`
+          : '<p class="muted">Der PayPal-Link wird demnächst eingetragen.</p>'}
+      </div>
+      <div class="spenden-box">
+        <h3>Per QR-Code</h3>
+        <img class="qr" src="${esc(qr)}" alt="QR-Code zur Spende an den VfB Grötzingen" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+        <p class="muted" style="display:none">Der QR-Code wird demnächst eingetragen.</p>
+      </div>
+    </div>
+    <p class="muted">Du möchtest eine Zuwendungsbestätigung (Spendenquittung)? Dann schreib bitte mit Name und Anschrift an info@vfb-groetzingen.de.</p>
+  </div>`;
+}
+
 function viewKonto() {
   if (state.recovery) {
     return `<h2>Neues Passwort</h2>
@@ -625,7 +653,7 @@ async function setStatus(id, status) {
 }
 
 function render() {
-  const tabs = [['markt', 'Flohmarkt'], ['chat', 'Chat'], ['konto', state.user ? 'Konto' : 'Anmelden']];
+  const tabs = [['markt', 'Flohmarkt'], ['chat', 'Chat'], ['spenden', 'Unterstützen'], ['konto', state.user ? 'Konto' : 'Anmelden']];
   if (state.isAdmin) tabs.push(['admin', `Prüfung${state.reports.length ? ` (${state.reports.length})` : ''}`]);
   document.getElementById('tabs').innerHTML = tabs.map(([k, l]) =>
     `<button role="tab" aria-selected="${state.tab === k}" onclick="go('${k}')">${l}</button>`).join('');
@@ -634,7 +662,7 @@ function render() {
     document.getElementById('who').textContent = '';
     return;
   }
-  const views = { chat: viewChat, markt: viewMarkt, konto: viewKonto, admin: viewAdmin, impressum: viewImpressum, datenschutz: viewDatenschutz };
+  const views = { chat: viewChat, markt: viewMarkt, spenden: viewSpenden, konto: viewKonto, admin: viewAdmin, impressum: viewImpressum, datenschutz: viewDatenschutz };
   const notices = (state.msg ? `<div class="notice" role="status">${esc(state.msg)}</div>` : '')
     + (state.err ? `<div class="notice warn" role="alert">${esc(state.err)}</div>` : '');
   document.getElementById('main').innerHTML = notices + (views[state.tab] || viewMarkt)();
