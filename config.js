@@ -9,7 +9,7 @@ window.APP_CONFIG = {
   SUPABASE_ANON_KEY: "sb_publishable_w4VWEVJiGhv26lo0svPwEQ_dd7unr8R",
   
   // SITE_URL: "https://DEIN-GITHUB-NAME.github.io/REPO-NAME"
-  SITE_URL: "https://github.com/vfb-groetzingen/vfb-app.git"
+  SITE_URL: "https://github.com/vfb-groetzingen/vfb-app.git",
   
   // Spenden-Seite: PayPal-Link des Vereins (leer lassen, solange nicht vorhanden)
   SPENDEN_PAYPAL_URL: "https://www.paypal.com/qrcodes/p2pqrc/7EHS2MJVYFR5G",
