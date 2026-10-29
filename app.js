@@ -1,5 +1,24 @@
+// Startprüfung: Fehlt die Konfiguration oder ist config.js fehlerhaft, zeigt die Seite eine Hilfe statt "Lade …".
+function startFehler(text) {
+  const main = document.getElementById('main');
+  if (main) main.innerHTML = `<div class="notice warn" role="alert">${text}</div>`;
+}
 const cfg = window.APP_CONFIG;
-const sb = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
+if (!cfg || !cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY) {
+  startFehler('Die Konfiguration (config.js) fehlt oder ist unvollständig. Bitte Datei und Schlüssel prüfen.');
+  throw new Error('config.js nicht geladen');
+}
+let sb;
+try {
+  sb = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
+} catch (err) {
+  startFehler('Die Verbindung zum Server konnte nicht eingerichtet werden. Bitte die Werte in config.js prüfen (SUPABASE_URL, SUPABASE_ANON_KEY).');
+  throw err;
+}
+// Zeitüberschreitung: Startet die App nicht innerhalb von 10 Sekunden, erscheint ein Hinweis.
+setTimeout(() => {
+  if (!state.booted) startFehler('Die Seite konnte nicht vollständig geladen werden. Bitte neu laden. Hält das an, prüfe die Einträge in config.js (Kommas, Anführungszeichen) und die Internetverbindung.');
+}, 10000);
 const CATS = ['Schuhe', 'Bekleidung', 'Ausrüstung', 'Bälle', 'Sonstiges'];
 const params = new URLSearchParams(location.search);
 
