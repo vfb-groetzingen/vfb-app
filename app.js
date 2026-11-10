@@ -26,7 +26,7 @@ const state = {
   booted: false, tab: 'markt', user: null, isAdmin: false, displayName: '',
   messages: [], items: [], reports: [],
   chatReady: false, msg: '', err: '', editItem: null, inquiryId: null,
-  recovery: false, pendingEmail: '',
+  recovery: false, pendingEmail: '', keep: [],
   filter: { q: '', cat: '', sort: 'neu', nurFrei: false }
 };
 
@@ -34,6 +34,12 @@ function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 function val(id) { return document.getElementById(id).value.trim(); }
+const MAX_BILDER = 4;
+// Liefert alle Bildpfade eines Artikels; ältere Artikel haben nur image_path.
+function bildPfade(it) {
+  if (Array.isArray(it.image_paths) && it.image_paths.length) return it.image_paths;
+  return it.image_path ? [it.image_path] : [];
+}
 function fmt(iso) {
   return iso ? new Date(iso).toLocaleString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Termin offen';
 }
@@ -63,10 +69,10 @@ async function loadItems() {
   const { data, error } = await sb.from('items').select('*').order('created_at', { ascending: false });
   if (error) throw error;
   state.items = await Promise.all((data || []).map(async it => {
-    if (it.image_path) {
-      const { data: s } = await sb.storage.from('flea-images').createSignedUrl(it.image_path, 3600);
-      it.imgUrl = s?.signedUrl || '';
-    }
+    it.imgUrls = await Promise.all(bildPfade(it).map(async p => {
+      const { data: s } = await sb.storage.from('flea-images').createSignedUrl(p, 3600);
+      return s?.signedUrl || '';
+    }));
     return it;
   }));
 }
@@ -218,7 +224,13 @@ function itemForm() {
          <div class="field"><label for="ip">Preis in €</label><input id="ip" type="number" required min="0" max="100000" step="0.5" value="${e ? Number(e.price_eur) : ''}"></div>
          <div class="field"><label for="ic">Kategorie</label><select id="ic">${CATS.map(c => `<option ${e && e.category === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
          <div class="field full"><label for="idesc">Beschreibung</label><textarea id="idesc" rows="2" maxlength="500">${v('description')}</textarea></div>
-         <div class="field full"><label for="iimg">${e ? 'Neues Foto (optional, ersetzt das bisherige)' : 'Foto (optional)'}</label><input id="iimg" type="file" accept="image/*"></div>
+         <div class="field full">
+           <span class="muted">Fotos (bis zu ${MAX_BILDER}, optional). JPG, PNG oder WebP; große Fotos werden automatisch verkleinert. Mindestens 800 px auf der längeren Seite.</span>
+           <div id="bildKeep" class="bild-vorschau-liste">${keepHtml()}</div>
+           <div id="bildNeu" class="bild-vorschau-liste"></div>
+           <label for="iimg">Fotos auswählen</label>
+           <input id="iimg" type="file" accept="image/jpeg,image/png,image/webp" multiple onchange="bildenAuswahl(this)">
+         </div>
          <button class="primary" type="submit">${e ? 'Speichern' : 'Einstellen'}</button>
          ${e ? '<button class="secondary" type="button" onclick="cancelEdit()">Abbrechen</button>' : ''}
        </form></div>`;
@@ -277,7 +289,7 @@ function itemCard(it) {
     ? inquiryForm(it.id)
     : `<button class="secondary" onclick="openInquiry('${it.id}')">Anfrage senden</button>`;
   return `<div class="item">
-    ${it.imgUrl ? `<img class="thumb" src="${esc(it.imgUrl)}" alt="Foto zu ${esc(it.title)}" loading="lazy">` : ''}
+    ${(it.imgUrls || []).some(Boolean) ? `<div style="display:flex;gap:6px;flex-wrap:wrap">${it.imgUrls.filter(Boolean).map((u, i) => `<img class="thumb" src="${esc(u)}" alt="Foto ${i + 1} zu ${esc(it.title)}" loading="lazy">`).join('')}</div>` : ''}
     <div>
       <h3>${esc(it.title)}<span class="price">${price(it.price_eur)}</span></h3>
       <span class="tag">${esc(it.category)}</span>${sold ? '<span class="tag sold-tag">Verkauft</span>' : ''}${it.status !== 'freigegeben' ? '<span class="tag warn-tag">In Prüfung</span>' : ''}
@@ -322,6 +334,8 @@ function shrinkImage(file) {
 function editItem(id) {
   const it = state.items.find(x => x.id === id);
   if (!it) return;
+  FleaBilder.auswahlLeeren();
+  state.keep = bildPfade(it).map((p, i) => ({ path: p, url: (it.imgUrls || [])[i] || '' }));
   state.editItem = it; state.msg = ''; state.err = '';
   render();
   window.scrollTo(0, 0);
@@ -343,44 +357,68 @@ async function sendInquiry(e, id) {
   render();
 }
 
-function cancelEdit() { state.editItem = null; state.err = ''; render(); }
+function keepHtml() {
+  return (state.keep || []).map((k, i) =>
+    `<figure class="bild-vorschau"><img src="${esc(k.url)}" alt="Bisheriges Foto ${i + 1}"><figcaption>Bisheriges Foto</figcaption><button type="button" class="secondary" onclick="keepRemove(${i})">Entfernen</button></figure>`
+  ).join('');
+}
+function keepRemove(i) {
+  state.keep.splice(i, 1);
+  render();
+}
+async function bildenAuswahl(input) {
+  const dateien = Array.from(input.files || []);
+  input.value = '';
+  if (!dateien.length) return;
+  const meldungen = await FleaBilder.bilderHinzufuegen(dateien, state.keep.length);
+  state.err = meldungen.join(' ');
+  render();
+}
+function cancelEdit() { state.editItem = null; state.keep = []; FleaBilder.auswahlLeeren(); state.err = ''; render(); }
 
 async function saveItem(e) {
   e.preventDefault();
-  const file = document.getElementById('iimg').files[0];
   const editing = state.editItem;
-  let newPath = null;
+  const keepPaths = state.keep.map(k => k.path);
+  const neu = FleaBilder.neueBilder();
+  if (keepPaths.length + neu.length > MAX_BILDER) {
+    state.err = `Maximal ${MAX_BILDER} Bilder pro Artikel. Bitte zuerst ein Bild entfernen.`;
+    render();
+    return;
+  }
+  let neuePfade = [];
   try {
     const fields = { title: val('it'), price_eur: Number(val('ip')), category: val('ic'), description: val('idesc') || null };
-    if (file) {
-      const blob = await shrinkImage(file);
-      newPath = `${state.user.id}/${crypto.randomUUID()}.jpg`;
-      const { error: upErr } = await sb.storage.from('flea-images').upload(newPath, blob, { contentType: 'image/jpeg' });
-      if (upErr) throw upErr;
-    }
+    neuePfade = await FleaBilder.bilderHochladen(sb, state.user.id, neu);
+    const alle = keepPaths.concat(neuePfade);
+    fields.image_paths = alle;
+    fields.image_path = alle[0] || null;
     if (editing) {
-      if (newPath) fields.image_path = newPath;
       const { data, error } = await sb.from('items').update(fields).eq('id', editing.id).select('status');
       if (error) throw error;
       if (!data || data.length === 0) {
         throw new Error('Keine Berechtigung zum Ändern. Bitte prüfe, ob die SQL-Datei update-artikel-bearbeiten.sql in Supabase ausgeführt wurde.');
       }
-      if (newPath && editing.image_path) await sb.storage.from('flea-images').remove([editing.image_path]);
+      const entfernt = bildPfade(editing).filter(p => !alle.includes(p));
+      if (entfernt.length) await FleaBilder.bilderLoeschen(sb, entfernt);
       state.msg = data[0].status === 'freigegeben'
         ? 'Änderungen gespeichert.'
         : 'Änderungen gespeichert. Der Artikel wird erneut vom Vorstand geprüft.';
       state.editItem = null;
     } else {
       fields.seller_id = state.user.id;
-      fields.image_path = newPath;
       const { data, error } = await sb.from('items').insert(fields).select('status').single();
       if (error) throw error;
       state.msg = data.status === 'freigegeben'
         ? 'Dein Artikel ist veröffentlicht. Er bleibt einen Monat online.'
         : 'Dein Artikel wird vom Vorstand geprüft, bevor er erscheint.';
     }
+    FleaBilder.auswahlLeeren();
+    state.keep = [];
     state.err = '';
   } catch (err) {
+    // Neu hochgeladene Bilder wieder entfernen, wenn das Speichern fehlschlägt.
+    if (neuePfade.length) await FleaBilder.bilderLoeschen(sb, neuePfade).catch(() => {});
     state.err = (editing ? 'Speichern fehlgeschlagen: ' : 'Einstellen fehlgeschlagen: ') + err.message;
   }
   try { await loadItems(); } catch (e2) { state.err = state.err || 'Artikel konnten nicht neu geladen werden: ' + e2.message; }
@@ -400,7 +438,7 @@ async function toggleSold(id, sold) {
 async function delItem(id) {
   if (!confirm('Artikel wirklich entfernen?')) return;
   const it = state.items.find(x => x.id === id);
-  if (it?.image_path) await sb.storage.from('flea-images').remove([it.image_path]);
+  if (it) await FleaBilder.bilderLoeschen(sb, bildPfade(it));
   const { error } = await sb.from('items').delete().eq('id', id);
   state.err = error ? error.message : '';
   state.msg = error ? '' : 'Artikel entfernt.';
@@ -642,8 +680,8 @@ async function removeReported(reportId, isItem, targetId) {
   if (!confirm(isItem ? 'Artikel wirklich entfernen?' : 'Nachricht wirklich entfernen?')) return;
   let error = null;
   if (isItem) {
-    const { data: it } = await sb.from('items').select('image_path').eq('id', targetId).maybeSingle();
-    if (it?.image_path) await sb.storage.from('flea-images').remove([it.image_path]);
+    const { data: it } = await sb.from('items').select('image_path,image_paths').eq('id', targetId).maybeSingle();
+    if (it) await FleaBilder.bilderLoeschen(sb, bildPfade(it));
     ({ error } = await sb.from('items').delete().eq('id', targetId));
   } else {
     ({ error } = await sb.from('messages').delete().eq('id', targetId));
@@ -685,6 +723,8 @@ function render() {
   const notices = (state.msg ? `<div class="notice" role="status">${esc(state.msg)}</div>` : '')
     + (state.err ? `<div class="notice warn" role="alert">${esc(state.err)}</div>` : '');
   document.getElementById('main').innerHTML = notices + (views[state.tab] || viewMarkt)();
+  const neuEl = document.getElementById('bildNeu');
+  if (neuEl) FleaBilder.vorschauZeichnen(neuEl, () => render());
   document.getElementById('who').textContent = state.user ? `Angemeldet: ${state.displayName}` : '';
   const m = document.getElementById('msgs');
   if (m) m.scrollTop = m.scrollHeight;
