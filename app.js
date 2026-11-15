@@ -293,6 +293,7 @@ function filteredItems() {
   });
   if (f.sort === 'preis-auf') list.sort((a, b) => Number(a.price_eur) - Number(b.price_eur));
   if (f.sort === 'preis-ab') list.sort((a, b) => Number(b.price_eur) - Number(a.price_eur));
+  list.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
   return list;
 }
 
@@ -313,9 +314,10 @@ function itemCard(it) {
     ${fotoGalerie(it)}
     <div>
       <h3>${esc(it.title)}<span class="price">${preisText(it.price_eur)}</span></h3>
-      <span class="tag">${esc(it.category)}</span>${sold ? '<span class="tag sold-tag">Verkauft</span>' : ''}${it.status === 'pruefung' ? '<span class="tag warn-tag">In Prüfung</span>' : ''}${it.status === 'abgelehnt' ? '<span class="tag warn-tag">Abgelehnt</span>' : ''}
+      <span class="tag">${esc(it.category)}</span>${it.pinned ? '<span class="tag">Immer oben</span>' : ''}${sold ? '<span class="tag sold-tag">Verkauft</span>' : ''}${it.status === 'pruefung' ? '<span class="tag warn-tag">In Prüfung</span>' : ''}${it.status === 'abgelehnt' ? '<span class="tag warn-tag">Abgelehnt</span>' : ''}
       ${mine && it.status === 'freigegeben' ? '<span class="tag">Freigegeben</span>' : ''}${it.status === 'pruefung' ? `<div class="notice warn" role="status"><b>In Prüfung:</b> ${esc(mine || state.isAdmin ? pruefText(it) : 'Der Artikel wird vom Vorstand geprüft, bevor er erscheint.')}</div>` : ''}
       <p>${esc(it.description || '')}</p>
+      ${state.isAdmin ? `<p><button class="link" onclick="togglePin('${it.id}', ${!it.pinned})">${it.pinned ? 'Nicht mehr immer oben' : 'Immer oben anzeigen'}</button>${mine ? '' : ` <button class="link" onclick="delItem('${it.id}')">Entfernen (Vorstand)</button>`}</p>` : ''}
       ${mine ? `<p><span class="muted">Dein Artikel</span> <button class="link" onclick="editItem('${it.id}')">Bearbeiten</button> <button class="link" onclick="toggleSold('${it.id}', ${!sold})">${sold ? 'Wieder verfügbar machen' : 'Als verkauft markieren'}</button> <button class="link" onclick="delItem('${it.id}')">Entfernen</button></p>` : ''}
       ${action}
       ${state.user && !mine ? `<p><button class="link" onclick="reportItem('${it.id}')">Artikel melden</button></p>` : ''}
@@ -396,6 +398,14 @@ async function bildenAuswahl(input) {
   if (!dateien.length) return;
   const meldungen = await FleaBilder.bilderHinzufuegen(dateien, state.keep.length);
   state.err = meldungen.join(' ');
+  render();
+}
+
+async function togglePin(id, pinned) {
+  const { data, error } = await sb.from('items').update({ pinned }).eq('id', id).select('id');
+  state.err = error ? 'Speichern fehlgeschlagen: ' + error.message : ((!data || data.length === 0) ? 'Keine Berechtigung zum Ändern.' : '');
+  state.msg = state.err ? '' : (pinned ? 'Artikel wird jetzt immer zuerst angezeigt.' : 'Artikel wird wieder normal einsortiert.');
+  try { await loadItems(); } catch (_) {}
   render();
 }
 
