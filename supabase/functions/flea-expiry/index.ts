@@ -53,6 +53,7 @@ Deno.serve(async (req) => {
     .from("items")
     .select("id,title,seller_id,renew_token")
     .eq("status", "freigegeben")
+    .eq("pinned", false)
     .lte("expires_at", now.toISOString())
     .is("reminder_sent_at", null);
   if (e1) return new Response(e1.message, { status: 500 });
@@ -84,6 +85,7 @@ Deno.serve(async (req) => {
   const { data: old, error: e2 } = await admin
     .from("items")
     .select("id,title,seller_id,image_path,image_paths")
+    .eq("pinned", false)
     .not("reminder_sent_at", "is", null)
     .lte("reminder_sent_at", cutoff);
   if (e2) return new Response(e2.message, { status: 500 });
