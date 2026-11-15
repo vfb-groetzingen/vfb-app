@@ -45,7 +45,6 @@ create table if not exists public.items (
   category text not null,
   description text check (char_length(description) <= 500),
   image_path text,
-  image_paths text[] not null default '{}' check (cardinality(image_paths) <= 4),
   status text not null default 'pruefung' check (status in ('pruefung','freigegeben','abgelehnt')),
   check_result text,
   expires_at timestamptz,
