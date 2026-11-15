@@ -317,7 +317,7 @@ function itemCard(it) {
       <span class="tag">${esc(it.category)}</span>${it.pinned ? '<span class="tag">Immer oben</span>' : ''}${sold ? '<span class="tag sold-tag">Verkauft</span>' : ''}${it.status === 'pruefung' ? '<span class="tag warn-tag">In Prüfung</span>' : ''}${it.status === 'abgelehnt' ? '<span class="tag warn-tag">Abgelehnt</span>' : ''}
       ${mine && it.status === 'freigegeben' ? '<span class="tag">Freigegeben</span>' : ''}${it.status === 'pruefung' ? `<div class="notice warn" role="status"><b>In Prüfung:</b> ${esc(mine || state.isAdmin ? pruefText(it) : 'Der Artikel wird vom Vorstand geprüft, bevor er erscheint.')}</div>` : ''}
       <p>${esc(it.description || '')}</p>
-      ${state.isAdmin ? `<p><button class="link" onclick="togglePin('${it.id}', ${!it.pinned})">${it.pinned ? 'Nicht mehr immer oben' : 'Immer oben anzeigen'}</button>${mine ? '' : ` <button class="link" onclick="delItem('${it.id}')">Entfernen (Vorstand)</button>`}</p>` : ''}
+      ${state.isAdmin ? `<p><button class="link" onclick="togglePin('${it.id}', ${!it.pinned})">${it.pinned ? 'Nicht mehr immer oben' : 'Immer oben anzeigen'}</button>${mine ? '' : ` <button class="link" onclick="delItem('${it.id}')">Entfernen (Administrator)</button>`}</p>` : ''}
       ${mine ? `<p><span class="muted">Dein Artikel</span> <button class="link" onclick="editItem('${it.id}')">Bearbeiten</button> <button class="link" onclick="toggleSold('${it.id}', ${!sold})">${sold ? 'Wieder verfügbar machen' : 'Als verkauft markieren'}</button> <button class="link" onclick="delItem('${it.id}')">Entfernen</button></p>` : ''}
       ${action}
       ${state.user && !mine ? `<p><button class="link" onclick="reportItem('${it.id}')">Artikel melden</button></p>` : ''}
