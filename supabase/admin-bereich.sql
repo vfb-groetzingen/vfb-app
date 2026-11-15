@@ -5,7 +5,7 @@
 
 update public.profiles
 set is_admin = true
-where id = (select id from auth.users where email = 'admin@vfb-groetzingen.de');
+where id = (select id from auth.users where email = 'vorstand@beispiel.de');
 
 -- Kontrolle: Sollte eine Zeile mit is_admin = true zurückgeben
 select p.id, u.email, p.is_admin
@@ -13,4 +13,4 @@ from public.profiles p join auth.users u on u.id = p.id
 where p.is_admin;
 
 -- Admin wieder entfernen (falls nötig)
--- update public.profiles set is_admin = false where id = (select id from auth.users where email = 'admin@vfb-groetzingen.de');
+-- update public.profiles set is_admin = false where id = (select id from auth.users where email = 'vorstand@beispiel.de');
